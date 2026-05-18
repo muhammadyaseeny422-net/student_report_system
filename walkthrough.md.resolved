@@ -1,0 +1,67 @@
+# Walkthrough – Student Report System Upgrade
+
+## What Was Built
+
+Upgraded the existing student report system from static if-else logic to a CMS-ready module with **ML-based grading**, **3 certificate types**, and **role-based access functions**.
+
+### New/Modified Files
+
+| File | Purpose |
+|------|---------|
+| [data_loader.py](file:///c:/Users/user/Documents/student_report_system/data_loader.py) | Loads Excel data, validates marks, supports teacher overrides |
+| [model.py](file:///c:/Users/user/Documents/student_report_system/model.py) | Random Forest ML model (replaces all if-else grading) |
+| [report_generator.py](file:///c:/Users/user/Documents/student_report_system/report_generator.py) | PDF report cards using ML output |
+| [certificate_generator.py](file:///c:/Users/user/Documents/student_report_system/certificate_generator.py) | 3 certificate types: Academic, Behavior, Punctuality |
+| [cms_integration.py](file:///c:/Users/user/Documents/student_report_system/cms_integration.py) | CMS API functions for student/teacher/admin roles |
+| [main.py](file:///c:/Users/user/Documents/student_report_system/main.py) | Updated entry point running full pipeline |
+| [requirements.txt](file:///c:/Users/user/Documents/student_report_system/requirements.txt) | Added scikit-learn, joblib |
+
+### Key Design Decisions
+
+- **ML Model**: Random Forest trained on 2000 synthetic samples, saved via joblib to [models/grade_model.pkl](file:///c:/Users/user/Documents/student_report_system/models/grade_model.pkl)
+- **Excel Format**: Uses the user's updated 80-student file with all subjects out of 100 and Obedient/Punctual out of 10
+- **Certificates**: Landscape PDFs with gold borders, corner decorations, signature placeholders
+- **CMS Module**: Pure Python functions (no framework dependency) — ready to import into Django/Flask CMS
+
+---
+
+## Verification Results
+
+### Pipeline Run
+- ✅ `python main.py` — exit code 0
+- ✅ 80 report cards generated in `media/reports/`
+- ✅ 53 certificates generated in `media/certificates/` (35 punctuality, 18 behavior)
+- ✅ No academic excellence certs (expected — no student has ≥90% in ALL 9 subjects)
+
+### ML Model
+- ✅ Predicts correct grade (A+ for ~95% student), proper remarks, and full badge set
+- ✅ Model persists to `models/grade_model.pkl` and loads on subsequent runs
+
+### CMS Functions
+- ✅ `get_student_access(201)` returns report path + certificate paths
+- ✅ `get_teacher_access([201, 202])` returns docs for multiple students
+- ✅ `update_student_marks(201, {"Maths": 95, "English": 88})` regenerates report with updated marks
+
+### File Integrity
+- ✅ Report PDFs ~435KB (includes badge images)
+- ✅ Certificate PDFs ~2.8KB (text-only professional layout)
+
+---
+
+## CMS Integration Reference
+
+```python
+# Student role
+from cms_integration import get_student_access
+docs = get_student_access(201)  # returns {report, certificates}
+
+# Teacher role
+from cms_integration import update_student_marks, get_teacher_access
+update_student_marks(201, {"Maths": 95})  # edit + regenerate
+docs = get_teacher_access([201, 202, 203])  # view assigned students
+
+# Admin role
+from cms_integration import get_admin_access, generate_all_reports
+generate_all_reports()           # regenerate everything
+all_docs = get_admin_access()    # access all students
+```

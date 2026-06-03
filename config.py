@@ -1,23 +1,25 @@
 """
-config.py - Central configuration for the Multi-Class, Multi-Exam Student Report System.
+config.py - Central configuration for the Student Report System.
 
 Defines:
-  - Supported classes and exam types
-  - Subject structures and max marks per class/exam
+  - Supported class (Class 9) and exam types
+  - Subject structures and max marks per exam type
   - Trait configuration
-  - Data source toggle (Excel vs future CMS)
+  - Badge and position configuration
+  - Database and data source settings
   - Helper functions for dynamic config lookup
 """
 
+import os
+
 # ──────────────────────────────────────────────
-#  CLASSES & EXAM TYPES
+#  CLASS & EXAM TYPES
 # ──────────────────────────────────────────────
 
-CLASSES = [6, 7, 8, 9, 10]
+CLASSES = [9]
 
 EXAM_TYPES = ["midterm", "final", "bimonthly_1", "bimonthly_2"]
 
-# Human-readable exam type labels (used in report headers)
 EXAM_TYPE_LABELS = {
     "midterm": "MIDTERM",
     "final": "FINAL TERM",
@@ -26,7 +28,7 @@ EXAM_TYPE_LABELS = {
 }
 
 # ──────────────────────────────────────────────
-#  TRAIT CONFIGURATION (same for all classes)
+#  TRAIT CONFIGURATION
 # ──────────────────────────────────────────────
 
 TRAIT_CONFIG = {
@@ -35,23 +37,24 @@ TRAIT_CONFIG = {
 }
 
 # ──────────────────────────────────────────────
-#  SUBJECT STRUCTURES — CLASSES 6, 7, 8
+#  SUBJECT STRUCTURES — CLASS 9
 # ──────────────────────────────────────────────
-# All 9 subjects. Midterm/Final out of 100, Bimonthly out of 50.
 
-_CLASS_6_8_MIDTERM_FINAL = {
+# Students take EITHER Biology OR Computer (not both).
+# The elective subject key is "Biology" or "Computer" per student.
+_CLASS_9_MIDTERM_FINAL = {
     "Urdu": 100,
     "English": 100,
     "Maths": 100,
-    "Biology": 100,
-    "Computer": 100,
-    "Chemistry": 100,
-    "Physics": 100,
-    "Islamiat": 100,
-    "Pak_Studies": 100,
+    "Biology": 65,
+    "Computer": 65,
+    "Chemistry": 65,
+    "Physics": 65,
+    "Islamiat": 50,
+    "Pak_Studies": 50,
 }
 
-_CLASS_6_8_BIMONTHLY = {
+_CLASS_9_BIMONTHLY = {
     "Urdu": 50,
     "English": 50,
     "Maths": 50,
@@ -59,78 +62,90 @@ _CLASS_6_8_BIMONTHLY = {
     "Computer": 50,
     "Chemistry": 50,
     "Physics": 50,
-    "Islamiat": 50,
-    "Pak_Studies": 50,
-}
-
-CLASS_6_8_SUBJECTS = {
-    "midterm": _CLASS_6_8_MIDTERM_FINAL,
-    "final": _CLASS_6_8_MIDTERM_FINAL,
-    "bimonthly_1": _CLASS_6_8_BIMONTHLY,
-    "bimonthly_2": _CLASS_6_8_BIMONTHLY,
-}
-
-# ──────────────────────────────────────────────
-#  SUBJECT STRUCTURES — CLASSES 9, 10
-# ──────────────────────────────────────────────
-# Biology/Computer is a single combined column (student takes one or the other).
-# Different max marks per exam type.
-
-_CLASS_9_10_MIDTERM_FINAL = {
-    "Urdu": 100,
-    "English": 100,
-    "Maths": 100,
-    "Biology/Computer": 65,
-    "Chemistry": 65,
-    "Physics": 65,
-    "Islamiat": 50,
-    "Pak_Studies": 50,
-}
-
-_CLASS_9_10_BIMONTHLY = {
-    "Urdu": 50,
-    "English": 50,
-    "Maths": 50,
-    "Biology/Computer": 50,
-    "Chemistry": 50,
-    "Physics": 50,
     "Islamiat": 25,
     "Pak_Studies": 25,
 }
 
-CLASS_9_10_SUBJECTS = {
-    "midterm": _CLASS_9_10_MIDTERM_FINAL,
-    "final": _CLASS_9_10_MIDTERM_FINAL,
-    "bimonthly_1": _CLASS_9_10_BIMONTHLY,
-    "bimonthly_2": _CLASS_9_10_BIMONTHLY,
+# Elective subjects — a student has only ONE of these
+ELECTIVE_SUBJECTS = ["Biology", "Computer"]
+
+CLASS_9_SUBJECTS = {
+    "midterm": _CLASS_9_MIDTERM_FINAL,
+    "final": _CLASS_9_MIDTERM_FINAL,
+    "bimonthly_1": _CLASS_9_BIMONTHLY,
+    "bimonthly_2": _CLASS_9_BIMONTHLY,
 }
 
 # ──────────────────────────────────────────────
-#  SUBJECT TITLES (for certificates & badges)
+#  SUBJECT AWARD TITLES (for certificates & badges)
 # ──────────────────────────────────────────────
 
 SUBJECT_TITLES = {
-    "Urdu": "Urdu Scholar",
+    "Urdu": "Urdu Topper",
     "English": "English Excellence",
-    "Maths": "Maths Scholar",
-    "Biology": "Biology Expert",
-    "Computer": "Computer Science Excellence",
-    "Biology/Computer": "Science Excellence",
+    "Maths": "Maths Topper",
+    "Biology": "Biology Topper",
+    "Computer": "Computer Science Topper",
     "Chemistry": "Chemistry Star",
     "Physics": "Physics Excellence",
     "Islamiat": "Islamiat Scholar",
-    "Pak_Studies": "Pak Studies Scholar",
+    "Pak_Studies": "Pak Studies Topper",
+}
+
+SPECIAL_TITLES = {
+    "behavior": "Discipline Excellence",
+    "punctuality": "Attendance Champion",
+    "academic": "Academic Excellence",
 }
 
 # ──────────────────────────────────────────────
-#  DATA SOURCE TOGGLE
+#  BADGE CONFIGURATION
 # ──────────────────────────────────────────────
 
-# Switch between "excel" (current) and "cms" (future)
-DATA_SOURCE = "excel"
+# Subject badge filename mapping (maps subject key -> badge asset filename)
+# Only the subject TOPPER gets the badge (one per subject per class)
+SUBJECT_BADGE_FILES = {
+    "Urdu": "urdu.png",
+    "English": "english.png",
+    "Maths": "maths.png",
+    "Biology": "biology.png",
+    "Computer": "computer.png",
+    "Chemistry": "chemistry.png",
+    "Physics": "physics.png",
+    "Islamiat": "islamiat.png",
+    "Pak_Studies": "pak_studies.png",
+}
 
-# Default Excel file path
-DEFAULT_EXCEL_FILE = "data/students_marks.xlsx"
+# Grade badge — only A+ (>= 90% overall, exceptional achievement)
+GRADE_BADGE_FILE = "grade_aplus.png"
+
+# Position badge filename mapping
+POSITION_BADGE_FILES = {
+    1: "position_1st.png",
+    2: "position_2nd.png",
+    3: "position_3rd.png",
+}
+
+POSITION_TITLES = {
+    1: "1st Position",
+    2: "2nd Position",
+    3: "3rd Position",
+}
+
+# Special badge filenames
+SPECIAL_BADGE_FILES = {
+    "discipline": "discipline.png",
+    "attendance": "attendance.png",
+    "academic_excellence": "academic_excellence.png",
+}
+
+BADGE_ASSETS_DIR = os.path.join("assets", "badges")
+
+# ──────────────────────────────────────────────
+#  DATABASE & DATA SOURCE
+# ──────────────────────────────────────────────
+
+DATABASE_PATH = os.path.join("data", "academic.db")
 
 # ──────────────────────────────────────────────
 #  SESSION INFO
@@ -138,16 +153,6 @@ DEFAULT_EXCEL_FILE = "data/students_marks.xlsx"
 
 SESSION_YEAR = "2025-2026"
 SCHOOL_NAME = "THE LEADERS ACADEMY"
-
-# ──────────────────────────────────────────────
-#  BADGE TIERS (percentage thresholds)
-# ──────────────────────────────────────────────
-
-BADGE_TIERS = {
-    "Genius": 90,
-    "Expert": 80,
-    "Star": 70,
-}
 
 # ──────────────────────────────────────────────
 #  GRADE DEFINITIONS
@@ -167,43 +172,32 @@ GRADE_MAP = {
 # ──────────────────────────────────────────────
 
 def get_subject_config(class_num, exam_type):
-    """
-    Get the subject -> max_marks mapping for a given class and exam type.
-
-    Args:
-        class_num: int (6, 7, 8, 9, or 10)
-        exam_type: str ("midterm", "final", "bimonthly_1", "bimonthly_2")
-
-    Returns:
-        dict of {subject_name: max_marks}
-    """
+    """Get the subject -> max_marks mapping for a given class and exam type."""
     if class_num not in CLASSES:
         raise ValueError(f"Unsupported class: {class_num}. Must be one of {CLASSES}")
     if exam_type not in EXAM_TYPES:
         raise ValueError(f"Unsupported exam type: {exam_type}. Must be one of {EXAM_TYPES}")
-
-    if class_num in (6, 7, 8):
-        return CLASS_6_8_SUBJECTS[exam_type]
-    else:  # 9 or 10
-        return CLASS_9_10_SUBJECTS[exam_type]
+    return CLASS_9_SUBJECTS[exam_type]
 
 
 def get_sheet_name(class_num, exam_type):
-    """
-    Get the Excel sheet name for a given class and exam type.
-    Example: class_7_midterm, class_10_bimonthly_1
-    """
+    """Get the Excel sheet name for a given class and exam type."""
     return f"class_{class_num}_{exam_type}"
 
 
+def get_student_dir(class_num, exam_type, student_id):
+    """Get the per-student output directory."""
+    return os.path.join("media", f"class_{class_num}", exam_type, str(student_id))
+
+
 def get_report_dir(class_num, exam_type):
-    """Get the output directory for report cards."""
-    return f"media/class_{class_num}/{exam_type}/reports"
+    """Get the output directory for report cards (legacy, use get_student_dir)."""
+    return os.path.join("media", f"class_{class_num}", exam_type)
 
 
-def get_certificate_dir(class_num):
-    """Get the output directory for certificates (final term only)."""
-    return f"media/class_{class_num}/final/certificates"
+def get_certificate_dir(class_num, exam_type="final"):
+    """Get the output directory for certificates (legacy, use get_student_dir)."""
+    return os.path.join("media", f"class_{class_num}", exam_type)
 
 
 def get_exam_label(exam_type):

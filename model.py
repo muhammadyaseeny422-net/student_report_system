@@ -1,13 +1,10 @@
 """
 model.py - ML-based grading system using Random Forest.
 
-Uses percentage-normalized features so the model is class-agnostic.
-Works across all classes (6-10) and exam types regardless of
+Uses percentage-normalized features so the model works across
 different subject structures and max marks.
 
-Feature vector: 9 subject percentages + obedient + punctual = 11 features
-For classes 9/10 (8 subjects), the 9th slot is filled with the average
-of the other subject percentages to maintain consistent feature length.
+Feature vector: 8 subject percentages + avg padding + obedient + punctual = 11 features
 """
 
 import os
@@ -15,20 +12,15 @@ import numpy as np
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from config import GRADE_MAP, BADGE_TIERS
+from config import GRADE_MAP
 
 MODEL_DIR = "models"
 MODEL_PATH = os.path.join(MODEL_DIR, "grade_model.pkl")
 
-# Canonical subject order for feature vector (9 slots)
-# Classes 6-8 use all 9. Classes 9-10 use 8 (Biology/Computer merged).
-FEATURE_SUBJECTS_6_8 = [
+# Canonical subject order for feature vector (8 subjects for Class 9)
+# Note: Biology and Computer are electives — student has one or the other
+FEATURE_SUBJECTS = [
     "Urdu", "English", "Maths", "Biology", "Computer",
-    "Chemistry", "Physics", "Islamiat", "Pak_Studies"
-]
-
-FEATURE_SUBJECTS_9_10 = [
-    "Urdu", "English", "Maths", "Biology/Computer",
     "Chemistry", "Physics", "Islamiat", "Pak_Studies"
 ]
 
@@ -38,36 +30,27 @@ def _build_feature_vector(student):
     Build a normalized feature vector from a student dict.
 
     Converts all subject marks to percentages (0-100 scale) and
-    produces a fixed-length vector of 11 features:
-      [9 subject percentages, obedient, punctual]
+    produces a fixed-length vector of 12 features:
+      [9 subject percentages, avg_padding, obedient_scaled, punctual_scaled]
 
-    For classes 9/10 with 8 subjects, the 9th slot is filled with
-    the average percentage to keep the vector length consistent.
-
-    Args:
-        student: dict with 'subject_percentages', 'obedient', 'punctual', 'class_num'
+    Biology and Computer are separate slots — student has only one,
+    the other defaults to 0.
 
     Returns:
-        list of 11 float features
+        list of 12 float features
     """
-    class_num = student.get("class_num", 7)  # Default to class 7 format
     percentages = student["subject_percentages"]
-
     features = []
 
-    if class_num in (9, 10):
-        # 8 subjects — fill 9 slots
-        for subject in FEATURE_SUBJECTS_9_10:
-            features.append(percentages.get(subject, 0))
-        # 9th slot: average of all subject percentages
-        avg_pct = sum(features) / len(features) if features else 0
-        features.append(avg_pct)
-    else:
-        # Classes 6-8: all 9 subjects
-        for subject in FEATURE_SUBJECTS_6_8:
-            features.append(percentages.get(subject, 0))
+    for subject in FEATURE_SUBJECTS:
+        features.append(percentages.get(subject, 0))
 
-    # Add behavioral traits (already out of 10, scale to 0-100 for consistency)
+    # Average of actual subjects (exclude zeros from missing elective)
+    actual = [f for f in features if f > 0]
+    avg_pct = sum(actual) / len(actual) if actual else 0
+    features.append(avg_pct)
+
+    # Behavioral traits (scale 0-10 to 0-100)
     features.append(student["obedient"] * 10)
     features.append(student["punctual"] * 10)
 
@@ -78,21 +61,19 @@ def _generate_synthetic_data(n_samples=2000):
     """
     Generate synthetic training data covering all grade ranges.
 
-    Features: 9 subject percentages (0-100) + obedient (0-100) + punctual (0-100)
+    Features: 9 subject pcts + avg_padding + obedient + punctual = 12
     Labels: grade class (0=A+, 1=A, 2=B, 3=C, 4=D)
-
-    All features are on the same 0-100 percentage scale.
     """
     rng = np.random.RandomState(42)
     X = []
     y = []
 
     grade_ranges = [
-        (0, 90, 100),   # A+: percentage 90-100
-        (1, 80, 89),    # A:  percentage 80-89
-        (2, 65, 79),    # B:  percentage 65-79
-        (3, 50, 64),    # C:  percentage 50-64
-        (4, 30, 49),    # D:  percentage below 50
+        (0, 90, 100),   # A+
+        (1, 80, 89),    # A
+        (2, 65, 79),    # B
+        (3, 50, 64),    # C
+        (4, 30, 49),    # D
     ]
 
     samples_per_grade = n_samples // len(grade_ranges)
@@ -100,20 +81,29 @@ def _generate_synthetic_data(n_samples=2000):
     for grade_label, low_pct, high_pct in grade_ranges:
         for _ in range(samples_per_grade):
             target_avg = rng.uniform(low_pct, high_pct)
-
-            # Generate 9 subject percentages around the target
+            # 9 subject slots (one of Bio/Computer will be 0)
             subject_pcts = []
-            for _ in range(9):
+            for j in range(9):
+                # Randomly zero out either Bio (idx 3) or Computer (idx 4)
+                if j == 3 and rng.random() > 0.55:
+                    subject_pcts.append(0)
+                    continue
+                if j == 4 and rng.random() > 0.55:
+                    subject_pcts.append(0)
+                    continue
                 pct = target_avg + rng.normal(0, 8)
                 pct = np.clip(pct, 0, 100)
                 subject_pcts.append(round(pct, 1))
 
-            # Behavioral traits (slightly correlated with academics)
+            # Average padding (of non-zero subjects)
+            actual = [p for p in subject_pcts if p > 0]
+            avg_pad = sum(actual) / len(actual) if actual else 0
+
             base_behavior = min(100, max(0, target_avg + rng.normal(0, 15)))
             obedient = round(np.clip(base_behavior + rng.normal(0, 10), 0, 100), 1)
             punctual = round(np.clip(base_behavior + rng.normal(0, 10), 0, 100), 1)
 
-            features = subject_pcts + [obedient, punctual]
+            features = subject_pcts + [avg_pad, obedient, punctual]
             X.append(features)
             y.append(grade_label)
 
@@ -159,63 +149,77 @@ def load_model():
 
 def predict_student(model, student):
     """
-    Predict grade, remarks, and badges for a student using the ML model.
+    Predict grade and generate ML-driven personalized remarks.
 
-    Uses percentage-normalized features internally, but does NOT
-    modify the student's original marks. Results are purely
-    classification output.
-
-    Args:
-        model: trained sklearn model
-        student: dict with marks, subject_percentages, obedient, punctual, class_num
+    Uses Random Forest prediction + feature analysis to generate
+    subject-specific insights — not generic text.
 
     Returns:
-        dict with: grade, remarks, subject_badges, trait_badges
+        dict with: grade, grade_label, remarks
     """
-    # Build percentage-normalized feature vector
     features = _build_feature_vector(student)
-
-    # Predict grade
     grade_label = model.predict([features])[0]
     grade_info = GRADE_MAP[grade_label]
 
-    # Add behavioral remarks
+    # ─── ML-Driven Remarks ───
+    # Analyze subject percentages for personalized insights
+    percentages = student["subject_percentages"]
+    pct_items = [(s.replace("_", " "), p) for s, p in percentages.items()]
+    pct_items.sort(key=lambda x: x[1], reverse=True)
+
+    # Find strongest and weakest subjects
+    strongest = pct_items[0] if pct_items else None
+    weakest = pct_items[-1] if pct_items else None
+    avg_pct = student["percentage"]
+
+    # Build base remark from ML grade
+    remark_parts = [grade_info["remarks"]]
+
+    # Add subject-specific ML insight
+    if strongest and strongest[1] >= 90:
+        remark_parts.append(f"Outstanding in {strongest[0]} ({strongest[1]:.0f}%).")
+    elif strongest and strongest[1] >= 75:
+        remark_parts.append(f"Strongest in {strongest[0]} ({strongest[1]:.0f}%).")
+
+    if weakest and weakest[1] < 50 and len(pct_items) > 1:
+        remark_parts.append(f"Needs focused improvement in {weakest[0]}.")
+    elif weakest and weakest[1] < 65 and avg_pct >= 70 and len(pct_items) > 1:
+        remark_parts.append(f"Could strengthen {weakest[0]} performance.")
+
+    # Behavioral analysis
     obedient = student["obedient"]
     punctual = student["punctual"]
-    behavior_remark = ""
     if obedient >= 9 and punctual >= 9:
-        behavior_remark = " A very well-behaved and punctual student."
-    elif obedient >= 9:
-        behavior_remark = " Well-behaved, but could improve punctuality."
+        remark_parts.append("Exemplary discipline and attendance record.")
+    elif obedient >= 8:
+        remark_parts.append("Shows excellent classroom conduct.")
     elif punctual >= 9:
-        behavior_remark = " Punctual, but behavior could be improved."
+        remark_parts.append("Commendable attendance and punctuality.")
+    elif obedient < 5 or punctual < 5:
+        remark_parts.append("Behavioral improvement recommended.")
 
-    full_remarks = grade_info["remarks"] + behavior_remark
-
-    # Determine subject badges using ML-predicted grade context
-    # Only award badges to students predicted as B or above
-    subject_badges = []
-    if grade_label <= 2:  # A+, A, or B
-        for subject, sub_pct in student["subject_percentages"].items():
-            if sub_pct >= BADGE_TIERS["Genius"]:
-                subject_badges.append(f"{subject}_Genius.png")
-            elif sub_pct >= BADGE_TIERS["Expert"]:
-                subject_badges.append(f"{subject}_Expert.png")
-            elif sub_pct >= BADGE_TIERS["Star"]:
-                subject_badges.append(f"{subject}_Star.png")
-
-    # Trait badges
-    trait_badges = []
-    if grade_label <= 2:  # Only for B or above
-        if obedient >= 8:
-            trait_badges.append("obedient.png")
-        if punctual >= 8:
-            trait_badges.append("punctual.png")
+    full_remarks = " ".join(remark_parts)
 
     return {
         "grade": grade_info["grade"],
         "grade_label": grade_label,
         "remarks": full_remarks,
-        "subject_badges": subject_badges,
-        "trait_badges": trait_badges,
     }
+
+
+def predict_class_batch(model, students):
+    """
+    Batch-predict grades for all students in a class/exam.
+
+    Args:
+        model: trained sklearn model
+        students: list of student dicts
+
+    Returns:
+        dict of {student_id: ml_result}
+    """
+    results = {}
+    for student in students:
+        ml_result = predict_student(model, student)
+        results[student["student_id"]] = ml_result
+    return results
